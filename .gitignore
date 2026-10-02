@@ -1,0 +1,23 @@
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.env
+logs/
+data/*.db
+data/*.sqlite
+data/vectorstore/
+models/*.gguf
+models/*.bin
+models/*.safetensors
+*.log
+.DS_Store
+Thumbs.db
+
+# Frontend
+node_modules/
+frontend/dist/
+frontend/.vite/

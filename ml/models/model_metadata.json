@@ -1,0 +1,21 @@
+{
+  "model_version": "1.0.0",
+  "trained_at": "2026-09-04T14:49:20.363991+00:00",
+  "features": [
+    "market_demand",
+    "competition",
+    "problem_severity",
+    "customer_accessibility",
+    "business_model_strength",
+    "startup_cost",
+    "scalability",
+    "growth_potential"
+  ],
+  "target": "viability_score",
+  "n_train": 240,
+  "n_test": 60,
+  "mae": 4.953,
+  "r2": 0.605,
+  "random_state": 42,
+  "note": "Educational decision-support model trained on a small synthetic dataset. Not a real-world startup-success predictor."
+}

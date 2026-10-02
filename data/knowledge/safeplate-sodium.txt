@@ -1,0 +1,3 @@
+SafePlate sodium guidance
+
+The SafePlate application treats 2 grams of salt as the default daily warning threshold for a meal plan unless a clinician overrides it.
