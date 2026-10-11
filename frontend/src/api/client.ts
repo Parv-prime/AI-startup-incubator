@@ -1,4 +1,11 @@
-const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8080"
+// The only place the backend URL is decided. Set VITE_API_BASE_URL at build time
+// (frontend/.env locally, the static host's env vars in production). The localhost
+// default applies to `npm run dev` only, so a production bundle never points at localhost.
+const configuredBaseUrl = (import.meta.env.VITE_API_BASE_URL ?? "").trim().replace(/\/+$/, "")
+const BASE_URL = configuredBaseUrl || (import.meta.env.DEV ? "http://127.0.0.1:8080" : "")
+if (!BASE_URL) {
+  console.error("VITE_API_BASE_URL is not set — API requests will go to this site's own origin.")
+}
 const TOKEN_KEY = "myai.access_token"
 
 export class ApiError extends Error {

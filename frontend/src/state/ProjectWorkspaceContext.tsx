@@ -13,6 +13,7 @@ import * as projectsApi from "../api/projects"
 import type {
   AnalysisResponse,
   Recommendation,
+  Source,
   StartupProfile,
   ToolActivity,
   ViabilityResponse,
@@ -26,6 +27,19 @@ export interface ChatMessage {
   statusLine?: string
   toolActivity?: ToolActivity[]
   recommendations?: Recommendation[]
+  sources?: Source[]
+}
+
+const AI_UNAVAILABLE_MESSAGE = "AI service is temporarily unavailable. Please try again."
+
+/** User-facing text for a failed request — never a raw exception or stack trace. */
+function friendlyError(err: unknown): string {
+  // fetch() rejects with a TypeError when the backend can't be reached at all.
+  if (err instanceof TypeError) return AI_UNAVAILABLE_MESSAGE
+  if (err instanceof Error && err.message && !/^Request failed \(5\d\d\)$/.test(err.message)) {
+    return err.message
+  }
+  return AI_UNAVAILABLE_MESSAGE
 }
 
 interface WorkspaceState {
@@ -120,7 +134,7 @@ export function ProjectWorkspaceProvider({
         }
       })
       .catch((err) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load project.")
+        if (!cancelled) setError(friendlyError(err))
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
@@ -199,6 +213,7 @@ export function ProjectWorkspaceProvider({
       ])
       setSending(true)
       setError(null)
+      let extras: Pick<ChatMessage, "toolActivity" | "recommendations" | "sources"> | null = null
 
       try {
         await conversationsApi.streamMessage(conversationId, input, (event) => {
@@ -213,6 +228,11 @@ export function ProjectWorkspaceProvider({
               ),
             )
           } else if (event.type === "done") {
+            extras = {
+              toolActivity: event.tool_activity,
+              recommendations: event.recommendations,
+              sources: event.sources,
+            }
             setMessages((prev) =>
               prev.map((m) =>
                 m.id === assistantMsgId
@@ -221,13 +241,20 @@ export function ProjectWorkspaceProvider({
                       content: event.response,
                       streaming: false,
                       statusLine: undefined,
-                      toolActivity: event.tool_activity,
-                      recommendations: event.recommendations,
+                      ...extras,
                     }
                   : m,
               ),
             )
-            if (event.analysis) setAnalysis(event.analysis)
+            if (event.analysis) {
+              const update = event.analysis
+              // Merge: a turn that only ran competitor research must not blank the market page.
+              setAnalysis((prev) => ({
+                market_research: update.market_research ?? prev?.market_research ?? null,
+                competitor_research: update.competitor_research ?? prev?.competitor_research ?? null,
+                financial_analysis: update.financial_analysis ?? prev?.financial_analysis ?? null,
+              }))
+            }
             if (event.viability) setViability(event.viability)
             if (event.recommendations.length) setRecommendations(event.recommendations)
             if (!event.success && event.errors.length) setError(event.errors.join(" "))
@@ -238,12 +265,12 @@ export function ProjectWorkspaceProvider({
           }
         })
       } catch (err) {
-        const message = err instanceof Error ? err.message : "Something went wrong."
+        const message = friendlyError(err)
         setError(message)
         setMessages((prev) =>
           prev.map((m) =>
             m.id === assistantMsgId
-              ? { ...m, content: `Error: ${message}`, streaming: false, statusLine: undefined }
+              ? { ...m, content: message, streaming: false, statusLine: undefined }
               : m,
           ),
         )
@@ -255,11 +282,13 @@ export function ProjectWorkspaceProvider({
         conversationsApi
           .listMessages(conversationId)
           .then((rows) => {
-            setMessages(
-              rows
-                .filter((m) => m.role === "user" || m.role === "assistant")
-                .map((m) => ({ id: m.id, role: m.role as "user" | "assistant", content: m.content })),
-            )
+            const synced: ChatMessage[] = rows
+              .filter((m) => m.role === "user" || m.role === "assistant")
+              .map((m) => ({ id: m.id, role: m.role as "user" | "assistant", content: m.content }))
+            // Keep this turn's tool activity + sources on the reply they belong to.
+            const last = synced[synced.length - 1]
+            if (extras && last?.role === "assistant") Object.assign(last, extras)
+            setMessages(synced)
           })
           .catch(() => {})
       }

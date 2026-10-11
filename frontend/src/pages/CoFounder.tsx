@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from "motion/react"
 import { useProjectWorkspace } from "../state/ProjectWorkspaceContext"
 import { ToolActivityList } from "../components/ToolActivityList"
 import { Badge, priorityTone } from "../components/Card"
+import { SourceList } from "../components/SourceList"
 
 const SUGGESTIONS = [
   "Describe your startup idea in a sentence or two.",
@@ -189,6 +190,11 @@ export function CoFounder() {
                         </div>
                       )}
                       {m.content && <div className="whitespace-pre-wrap">{m.content}</div>}
+                      {m.role === "assistant" && m.sources && m.sources.length > 0 && (
+                        <div className="mt-3 border-t border-white/5 pt-3">
+                          <SourceList sources={m.sources} title="Live sources" compact />
+                        </div>
+                      )}
                       {m.role === "assistant" && m.recommendations && m.recommendations.length > 0 && (
                         <div className="mt-3 flex flex-col gap-2 border-t border-white/5 pt-3">
                           {m.recommendations.map((rec, i) => (

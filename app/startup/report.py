@@ -9,6 +9,7 @@ from app.projects import analyses_store
 async def build_report(session: AsyncSession, project: Project) -> dict:
     market_row = await analyses_store.latest_market_research(session, project_id=project.id)
     competitors = await analyses_store.list_competitors(session, project_id=project.id)
+    competitor_research_row = await analyses_store.latest_competitor_research(session, project_id=project.id)
     financial_row = await analyses_store.latest_financial_analysis(session, project_id=project.id)
     viability_row = await analyses_store.latest_viability(session, project_id=project.id)
     roadmap = await analyses_store.list_roadmap_items(session, project_id=project.id)
@@ -33,6 +34,9 @@ async def build_report(session: AsyncSession, project: Project) -> dict:
         if competitors
         else None
     )
+    if competitor_research_row and competitor_research_row.data.get("competitors"):
+        # Prefer the latest full evidence-based result (keeps sources + verification flags).
+        competitor = competitor_research_row.data
     financial = financial_row.data if financial_row else None
     viability = (
         {

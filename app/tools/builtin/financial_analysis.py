@@ -8,16 +8,17 @@ from app.models.base import ModelProvider
 from app.models.structured import generate_json
 from app.startup.finance import compute_financials
 from app.tools.base import BaseTool, ToolContext
-from app.tools.builtin.web_search import search_notes
+from app.research.base import ResearchProvider
+from app.research.evidence import UNAVAILABLE_NOTE, gather_evidence
 from app.tools.permissions import PermissionLevel
 
-_COST_SYNTHESIS_PROMPT = """You are a startup financial analyst. Using ONLY the live web search
-notes below (real current Indian market rates), produce a realistic itemized cost breakdown in
+_COST_SYNTHESIS_PROMPT = """You are a startup financial analyst. Using the numbered live web
+sources below (real current Indian market rates), produce a realistic itemized cost breakdown in
 INR for launching and running this specific startup in India.
 
-If the notes don't clearly cover a needed cost category, fill it in from your own real-world
-knowledge but prefix that component's name with "Estimated: " so it's clear it wasn't verified
-live. Keep each list to the 3-6 most material cost components — do not pad with trivial items.
+Do not invent sources or URLs. If the sources don't clearly cover a needed cost category, you may
+fill it in from your own general knowledge but you MUST prefix that component's name with
+"Estimated: " so it's clear it wasn't taken from a source. Keep each list to the 3-6 most material cost components — do not pad with trivial items.
 
 Respond with ONLY a JSON object with exactly this shape:
 {
@@ -92,6 +93,7 @@ class FinancialAnalysisOutput(BaseModel):
     unit_economics: dict
     cost_data_available: bool
     note: str
+    sources: list[dict] = Field(default_factory=list)
 
 
 class FinancialAnalysisTool(BaseTool):
@@ -109,17 +111,25 @@ class FinancialAnalysisTool(BaseTool):
     input_model = FinancialAnalysisInput
     output_model = FinancialAnalysisOutput
 
-    def __init__(self, model: ModelProvider | None = None):
+    def __init__(self, model: ModelProvider | None = None, research: ResearchProvider | None = None):
         self.model = model
+        self.research = research
 
     async def execute(self, payload: FinancialAnalysisInput, context: ToolContext) -> dict[str, Any]:
         initial_components = [c.model_dump() for c in payload.initial_cost_components]
         monthly_components = [c.model_dump() for c in payload.monthly_cost_components]
         cost_data_available = bool(initial_components or monthly_components)
         note = "Cost components provided by the conversation." if cost_data_available else ""
+        sources: list[dict] = []
 
-        if not initial_components and not monthly_components and payload.industry and self.model:
-            researched, note, cost_data_available = await self._auto_research_costs(payload.industry)
+        if (
+            not initial_components
+            and not monthly_components
+            and payload.industry
+            and self.model
+            and self.research
+        ):
+            researched, note, cost_data_available, sources = await self._auto_research_costs(payload.industry)
             initial_components = researched["initial_cost_components"]
             monthly_components = researched["monthly_cost_components"]
 
@@ -138,42 +148,52 @@ class FinancialAnalysisTool(BaseTool):
             "No industry given and no cost components provided — using the flat initial_cost / "
             "monthly_operating_cost figures as-is."
         )
+        result["sources"] = sources
         return result
 
-    async def _auto_research_costs(self, industry: str) -> tuple[dict[str, list[dict]], str, bool]:
+    async def _auto_research_costs(
+        self, industry: str
+    ) -> tuple[dict[str, list[dict]], str, bool, list[dict]]:
         empty = {"initial_cost_components": [], "monthly_cost_components": []}
-        notes = await search_notes(
+        evidence = await gather_evidence(
+            self.research,
             [
                 f"{industry} startup one-time setup cost India domain incorporation tools",
                 f"{industry} startup monthly operating cost India hosting salary rent",
-            ]
+            ],
+            max_results=4,
+            max_sources=6,
         )
-        if not notes:
+        if evidence.status != "live":
+            reason = UNAVAILABLE_NOTE if evidence.status == "unavailable" else "No cost sources were found."
             return (
                 empty,
-                "Could not reach the web to research real costs (no internet, or nothing found) — "
-                "no cost breakdown could be generated. Ask the founder for their real numbers, or "
-                "provide initial_cost / monthly_operating_cost directly.",
+                f"{reason} No cost breakdown could be generated. Ask the founder for their real "
+                "numbers, or provide initial_cost / monthly_operating_cost directly.",
                 False,
+                [],
             )
 
         parsed = await generate_json(
             self.model,
             system_prompt=_COST_SYNTHESIS_PROMPT,
-            user_prompt=f"Industry: {industry}\n\nLive web search notes:\n{notes}\n",
+            user_prompt=f"Industry: {industry}\n\nSOURCES:\n{evidence.prompt_block(max_chars_per_source=600)}\n",
         )
+        sources = evidence.to_dicts()
         if parsed is None:
-            return empty, "Web search succeeded but the cost breakdown could not be parsed.", False
+            return empty, "Web search succeeded but the cost breakdown could not be parsed.", False, sources
 
         initial = _as_components(parsed.get("initial_cost_components"))
         monthly = _as_components(parsed.get("monthly_cost_components"))
         if not initial and not monthly:
-            return empty, "Web search succeeded but no cost components could be extracted.", False
+            return empty, "Web search succeeded but no cost components could be extracted.", False, sources
 
         return (
             {"initial_cost_components": initial, "monthly_cost_components": monthly},
-            "Cost breakdown grounded in live web search results for real current Indian market rates.",
+            "Cost breakdown informed by live web sources for current Indian market rates; items "
+            "prefixed 'Estimated:' are model estimates, not taken from a source.",
             True,
+            sources,
         )
 
 

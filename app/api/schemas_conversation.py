@@ -59,9 +59,15 @@ class Recommendation(BaseModel):
 
 
 class Source(BaseModel):
+    id: str | None = None
     title: str
     url: str | None = None
+    domain: str | None = None
     source_type: str
+    source_kind: str | None = None
+    source_date: str | None = None
+    retrieved_at: str | None = None
+    provider: str | None = None
 
 
 class SendMessageResponse(BaseModel):

@@ -1,23 +1,46 @@
+# Python
 .venv/
+venv/
 __pycache__/
 *.py[cod]
 *.egg-info/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+
+# Secrets / local config (keep the examples)
 .env
+.env.*
+!.env.example
+frontend/.env
+frontend/.env.*
+!frontend/.env.example
+
+# Logs
 logs/
+*.log
+
+# Local databases
 data/*.db
+data/*.db-journal
 data/*.sqlite
 data/vectorstore/
+
+# Model weights (never committed; Ollama manages its own models).
+# ml/models/viability_model.joblib is small and IS committed — production needs it.
 models/*.gguf
 models/*.bin
 models/*.safetensors
-*.log
-.DS_Store
-Thumbs.db
+*.gguf
+*.safetensors
 
-# Frontend
+# Node / builds
 node_modules/
+dist/
+build/
 frontend/dist/
 frontend/.vite/
+
+# OS
+.DS_Store
+Thumbs.db

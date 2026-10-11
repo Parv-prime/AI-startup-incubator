@@ -55,6 +55,11 @@ export async function getLatestMarketResearch(projectId: string) {
 }
 
 export async function getCompetitorsForDisplay(projectId: string) {
+  // Prefer the latest full evidence-based result (sources, verification flags, limitations).
+  const latest = await apiGet<MarketResearchRow | null>(`/api/v1/projects/${projectId}/competitor-research`)
+  if (latest?.data && Array.isArray(latest.data.competitors) && latest.data.competitors.length > 0) {
+    return latest.data
+  }
   const rows = await apiGet<CompetitorRow[]>(`/api/v1/projects/${projectId}/competitors`)
   if (rows.length === 0) return null
   return {
@@ -72,7 +77,7 @@ export async function getCompetitorsForDisplay(projectId: string) {
       rows.find((c) => c.differentiation)?.differentiation ??
       "Not enough information to identify a clear differentiation angle.",
     sources: [],
-    note: "Based on the model's general background knowledge, not a live competitor lookup.",
+    note: "Saved competitor entries. Run competitor research again to see live sources.",
   }
 }
 

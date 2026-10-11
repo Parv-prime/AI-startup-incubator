@@ -26,7 +26,20 @@ export function Settings() {
         ) : health ? (
           <dl className="flex flex-col gap-2 text-sm">
             <Row label="Overall" value={health.status} ok={health.status === "ok"} />
-            <Row label="LLM" value={`${health.model_name} (${health.llm_status})`} ok={health.llm_status === "reachable"} />
+            <Row
+              label="LLM"
+              value={`${health.model_runtime === "cloud" ? "Cloud" : "Local Ollama"} · ${health.model_name} (${health.llm_status})`}
+              ok={health.llm_status === "reachable"}
+            />
+            <Row
+              label="Live research"
+              value={
+                health.research_providers?.length
+                  ? health.research_providers.join(" → ")
+                  : "unavailable (no provider configured)"
+              }
+              ok={!!health.research_providers?.length}
+            />
             <Row label="Database" value={health.database_status} ok={health.database_status === "ok"} />
             <Row label="ML model" value={health.ml_model_status} ok={health.ml_model_status === "ready"} />
             <Row label="Version" value={health.version} />

@@ -11,6 +11,8 @@ class HealthResponse(BaseModel):
     llm_status: str
     database_status: str
     ml_model_status: str
+    research_status: str = "unavailable"
+    research_providers: list[str] = []
 
 
 class ToolListResponse(BaseModel):

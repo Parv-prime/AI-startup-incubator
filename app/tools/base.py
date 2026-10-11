@@ -55,5 +55,10 @@ class BaseTool(ABC):
             ) from exc
         return self.output_model.model_validate(result).model_dump()
 
+    def model_view(self, result: dict[str, Any]) -> dict[str, Any]:
+        """What the LLM sees of this tool's result (the full result is still persisted and
+        returned to the UI). Override to drop bulky fields and save context/tokens."""
+        return result
+
     @abstractmethod
     async def execute(self, payload: BaseModel, context: ToolContext) -> Any: ...

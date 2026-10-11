@@ -12,8 +12,8 @@ logger = get_logger(__name__)
 class FallbackChatProvider:
     """Tries a primary chat provider first, falling back to a secondary on failure.
 
-    Used for quick chat replies: Gemini first, local Ollama as backup so chat
-    keeps working if Gemini keys are missing, rate-limited, or unreachable.
+    Only built when LLM_FALLBACK_PROVIDER is explicitly configured (e.g. cloud
+    first, local Ollama as backup on a developer machine).
     """
 
     def __init__(self, *, primary: ModelProvider, fallback: ModelProvider):

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import time
 from typing import Any
 
@@ -63,6 +64,7 @@ class AgentEngine:
         ]
         events: list[ToolEvent] = []
         tool_calls_used = 0
+        seen_calls: set[tuple[str, str]] = set()
 
         logger.info(
             "agent_start",
@@ -98,19 +100,42 @@ class AgentEngine:
                         if tool_calls_used >= self.settings.max_tool_calls_per_run:
                             raise MaxIterationsError("Tool execution limit reached.")
                         tool_calls_used += 1
+                        call_key = (call.name, json.dumps(call.arguments, sort_keys=True, default=str))
+                        if call_key in seen_calls:
+                            # Identical repeat (common with small models): don't re-run it.
+                            messages.append(
+                                ChatMessage(
+                                    role="tool",
+                                    name=call.name,
+                                    tool_call_id=call.id,
+                                    content=json.dumps(
+                                        {
+                                            "name": call.name,
+                                            "status": "duplicate",
+                                            "note": "You already called this tool with these exact "
+                                            "arguments in this run. Use the earlier result above and "
+                                            "continue with the next step or your final answer.",
+                                        }
+                                    ),
+                                )
+                            )
+                            continue
+                        seen_calls.add(call_key)
                         event = await self._execute_tool(call.name, call.arguments, request, run_id)
                         events.append(event)
+                        observation = event.model_dump()
+                        observation["result"] = self.tools.model_view(event.name, event.result)
                         messages.append(
                             ChatMessage(
                                 role="tool",
                                 name=call.name,
                                 tool_call_id=call.id,
-                                content=json.dumps(event.model_dump(), default=str),
+                                content=json.dumps(observation, default=str),
                             )
                         )
                     continue
 
-                output = (response.content or "").strip()
+                output = collapse_repetition((response.content or "").strip())
                 if not output:
                     output = "The agent finished without producing a response."
                 logger.info(
@@ -204,3 +229,20 @@ def _failure(
         error_code=error.code,
         recoverable=error.recoverable,
     )
+
+
+_SENTENCE_RE = re.compile(r"(?<=[.!?])\s+")
+
+
+def collapse_repetition(text: str) -> str:
+    """Drop exact repeats of earlier sentences — small local models sometimes loop on
+    one sentence until they run out of tokens."""
+    seen: set[str] = set()
+    kept: list[str] = []
+    for sentence in _SENTENCE_RE.split(text):
+        key = " ".join(sentence.lower().split())
+        if len(key) > 20 and key in seen:
+            continue
+        seen.add(key)
+        kept.append(sentence)
+    return " ".join(kept) if len(kept) < len(_SENTENCE_RE.split(text)) else text

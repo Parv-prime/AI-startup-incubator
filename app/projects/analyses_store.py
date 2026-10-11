@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.models import (
     Competitor,
+    CompetitorResearch,
     FinancialAnalysis,
     MarketResearch,
     Recommendation,
@@ -73,6 +74,31 @@ async def list_competitors(session: AsyncSession, *, project_id: str) -> list[Co
     return list((await session.scalars(stmt)).all())
 
 
+async def save_competitor_research(session: AsyncSession, *, project_id: str, data: dict) -> CompetitorResearch:
+    row = CompetitorResearch(project_id=project_id, data=data)
+    session.add(row)
+    await session.commit()
+    await session.refresh(row)
+    return row
+
+
+async def latest_competitor_research(session: AsyncSession, *, project_id: str) -> CompetitorResearch | None:
+    stmt = (
+        select(CompetitorResearch)
+        .where(CompetitorResearch.project_id == project_id)
+        .order_by(CompetitorResearch.created_at.desc())
+        .limit(1)
+    )
+    return await session.scalar(stmt)
+
+
+def _clip(value, limit: int = 200):
+    if value is None:
+        return None
+    value = str(value)
+    return value if len(value) <= limit else value[: limit - 1] + "…"
+
+
 async def replace_competitors_from_research(
     session: AsyncSession, *, project_id: str, competitors: list[dict]
 ) -> list[Competitor]:
@@ -84,12 +110,12 @@ async def replace_competitors_from_research(
             name=str(item.get("name") or "Unnamed competitor"),
             description=item.get("description") or item.get("positioning"),
             product=item.get("product"),
-            pricing=item.get("pricing"),
+            pricing=_clip(item.get("pricing")),
             strengths=item.get("strengths") or [],
             weaknesses=item.get("weaknesses") or [],
-            target_market=item.get("target_market") or item.get("target_audience"),
+            target_market=_clip(item.get("target_market") or item.get("target_audience")),
             differentiation=item.get("differentiation") or item.get("positioning"),
-            source=item.get("source") or "AI-synthesized (non-live)",
+            source=_clip(item.get("source") or "Not verified from available sources"),
         )
         session.add(row)
         created.append(row)

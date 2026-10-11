@@ -9,8 +9,9 @@ from app.config.settings import Settings, get_settings
 from app.database.engine import Database
 from app.knowledge.store import KnowledgeStore
 from app.memory.store import MemoryStore
-from app.models.factory import create_model_provider, create_primary_provider
+from app.models.factory import create_model_provider
 from app.projects.orchestrator import ProjectOrchestrator
+from app.research import create_research_provider
 from app.tools.builtin import build_default_registry
 
 
@@ -20,10 +21,14 @@ async def lifespan(app: FastAPI):
     db = Database(settings)
     await db.create_all()
 
-    ollama_model = create_model_provider(settings)
-    # Gemini (key 1, then key 2) drives every chat/tool-calling call; Ollama is
-    # only ever reached as a backup if Gemini is unset or both keys fail.
-    model = create_primary_provider(settings, ollama_fallback=ollama_model)
+    problems = settings.production_problems()
+    if problems:
+        raise RuntimeError("Unsafe production configuration: " + " ".join(problems))
+
+    # One ModelProvider for the whole app, selected by LLM_PROVIDER (ollama locally,
+    # cloud in production). Raises a clear error if the selected provider is misconfigured.
+    model = create_model_provider(settings)
+    research = create_research_provider(settings)
     memory_store = MemoryStore(db)
     knowledge_store = KnowledgeStore(db)
     registry = build_default_registry(
@@ -32,12 +37,14 @@ async def lifespan(app: FastAPI):
         memory_store=memory_store,
         knowledge_store=knowledge_store,
         model=model,
+        research=research,
     )
     engine = AgentEngine(model=model, tools=registry, settings=settings)
 
     app.state.settings = settings
     app.state.db = db
     app.state.model = model
+    app.state.research = research
     app.state.memory = memory_store
     app.state.knowledge = knowledge_store
     app.state.tools = registry

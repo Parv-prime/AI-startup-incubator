@@ -1,0 +1,75 @@
+# Render Blueprint: FastAPI web service + React static site, both on the free tier.
+# Secrets are declared with `sync: false` — Render asks for their values in the
+# dashboard; they are never stored in this file or in Git.
+services:
+  - type: web
+    name: myai-api
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    # Binds to 0.0.0.0 and Render's injected $PORT. No Ollama runs here.
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: APP_ENV
+        value: production
+      - key: LOG_LEVEL
+        value: INFO
+      # --- LLM: Groq keys first, Gemini keys as backup (comma-separated, no spaces needed) ---
+      # A rate-limited or rejected key is skipped until it recovers, then the next one is used.
+      - key: LLM_PROVIDER
+        value: cloud
+      - key: GROQ_API_KEYS
+        sync: false # e.g. gsk_aaa,gsk_bbb,gsk_ccc
+      - key: GROQ_MODEL
+        value: llama-3.3-70b-versatile
+      - key: GEMINI_API_KEYS
+        sync: false # e.g. AIza_aaa,AIza_bbb,AIza_ccc
+      - key: GEMINI_MODEL
+        value: gemini-2.5-flash
+      # --- Live research ---
+      - key: RESEARCH_PROVIDER
+        value: exa
+      - key: RESEARCH_FALLBACK_PROVIDERS
+        value: tavily,duckduckgo
+      - key: TAVILY_API_KEY
+        sync: false
+      - key: EXA_API_KEY
+        sync: false
+      - key: JINA_API_KEY
+        sync: false
+      - key: RESEARCH_CACHE_ENABLED
+        value: "true"
+      - key: RESEARCH_CACHE_TTL_SECONDS
+        value: "3600"
+      # --- Safety limits for free tiers ---
+      - key: AGENT_TIMEOUT_SECONDS
+        value: "180"
+      - key: CHAT_RATE_LIMIT_PER_MINUTE
+        value: "10"
+      # --- Security ---
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: CORS_ORIGINS
+        sync: false # e.g. https://myai-web.onrender.com
+      # SQLite on Render Free is EPHEMERAL (wiped on every deploy/restart/spin-down).
+      # Set a PostgreSQL URL here for persistent data.
+      - key: DATABASE_URL
+        value: sqlite:///./data/agent.db
+
+  - type: web
+    name: myai-web
+    runtime: static
+    rootDir: frontend
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist
+    # SPA: serve index.html for client-side routes like /projects/123/market
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: VITE_API_BASE_URL
+        sync: false # e.g. https://myai-api.onrender.com

@@ -127,6 +127,20 @@ class MarketResearch(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, index=True)
 
 
+class CompetitorResearch(Base):
+    """Full output of one competitor_research run (sources, verification flags,
+    limitations) — the per-competitor rows below only keep the summary fields."""
+
+    __tablename__ = "competitor_research"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("cres"))
+    project_id: Mapped[str] = mapped_column(
+        String(40), ForeignKey("projects.id", ondelete="CASCADE"), index=True
+    )
+    data: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, index=True)
+
+
 class Competitor(Base):
     __tablename__ = "competitors"
 

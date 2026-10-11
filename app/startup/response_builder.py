@@ -6,6 +6,7 @@ from app.agent.types import AgentResult, ToolEvent
 from app.database.models import Project
 
 _LABELS = {
+    "web_search": "Searching the web",
     "market_research": "Researching market",
     "competitor_research": "Analyzing competitors",
     "financial_analysis": "Calculating financials",
@@ -33,7 +34,9 @@ def build_response(*, result: AgentResult, project: Project) -> dict[str, Any]:
         }
 
     recommendations = _build_recommendations(financial, viability)
-    sources = _collect_sources(market, competitor)
+    sources = _collect_sources(
+        [event.result for event in result.tool_events if event.status == "ok" and event.result]
+    )
 
     errors = [event.error for event in result.tool_events if event.status == "error" and event.error]
     if result.status == "failed" and result.output:
@@ -104,18 +107,33 @@ def _build_recommendations(financial: dict | None, viability: dict | None) -> li
     return recs
 
 
-def _collect_sources(market: dict | None, competitor: dict | None) -> list[dict]:
+_SOURCE_FIELDS = (
+    "title",
+    "url",
+    "domain",
+    "source_type",
+    "source_kind",
+    "source_date",
+    "retrieved_at",
+    "provider",
+)
+
+
+def _collect_sources(results: list[dict]) -> list[dict]:
+    """Every source actually retrieved by a research tool this turn, deduped by URL.
+    Sources only ever come from tool results — never from the model's own text."""
     sources: list[dict] = []
-    for block in (market, competitor):
-        if not block:
-            continue
+    seen: set[str] = set()
+    for block in results:
         for raw in block.get("sources") or []:
-            if isinstance(raw, dict) and raw.get("title"):
-                sources.append(
-                    {
-                        "title": raw["title"],
-                        "url": raw.get("url"),
-                        "source_type": raw.get("source_type", "unknown"),
-                    }
-                )
+            if not isinstance(raw, dict) or not raw.get("title"):
+                continue
+            url = raw.get("url")
+            if url and url in seen:
+                continue
+            if url:
+                seen.add(url)
+            source = {key: raw.get(key) for key in _SOURCE_FIELDS}
+            source["source_type"] = source["source_type"] or "unknown"
+            sources.append(source)
     return sources

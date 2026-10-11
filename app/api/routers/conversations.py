@@ -18,6 +18,7 @@ from app.api.schemas_conversation import (
 from app.database.models import Conversation, Project, User
 from app.projects import store as project_store
 from app.security.auth import get_current_user
+from app.security.rate_limit import enforce_chat_rate_limit
 
 router = APIRouter(tags=["conversations"])
 
@@ -94,7 +95,11 @@ async def _maybe_autotitle(session: AsyncSession, conversation: Conversation, us
         )
 
 
-@router.post("/api/v1/conversations/{conversation_id}/messages", response_model=SendMessageResponse)
+@router.post(
+    "/api/v1/conversations/{conversation_id}/messages",
+    response_model=SendMessageResponse,
+    dependencies=[Depends(enforce_chat_rate_limit)],
+)
 async def send_message(
     payload: SendMessageRequest,
     request: Request,
@@ -121,7 +126,10 @@ async def send_message(
     return SendMessageResponse(**{k: v for k, v in final.items() if k != "type"})
 
 
-@router.post("/api/v1/conversations/{conversation_id}/messages/stream")
+@router.post(
+    "/api/v1/conversations/{conversation_id}/messages/stream",
+    dependencies=[Depends(enforce_chat_rate_limit)],
+)
 async def send_message_stream(
     payload: SendMessageRequest,
     request: Request,

@@ -19,10 +19,28 @@ export interface ToolActivity {
 }
 
 export interface Source {
+  id?: string
   title: string
   url: string | null
+  domain?: string | null
+  snippet?: string | null
   source_type: string
+  source_kind?: string | null
+  source_date?: string | null
   retrieved_at: string | null
+  provider?: string | null
+}
+
+export type ResearchStatus = "live" | "no_results" | "unavailable" | "background_only"
+
+export interface ResearchFinding {
+  claim: string
+  type: "evidence" | "derived"
+  evidence: string
+  source_ids: string[]
+  source_title: string | null
+  source_url: string | null
+  source_date: string | null
 }
 
 export interface Recommendation {
@@ -42,12 +60,21 @@ export interface ViabilityResponse {
 
 export interface Competitor {
   name: string
+  website?: string | null
+  website_verified?: boolean
   product: string
   target_audience: string
   pricing: string | null
+  pricing_verified?: boolean
+  features?: string[]
+  geography?: string | null
+  business_model?: string | null
   strengths: string[]
   weaknesses: string[]
   positioning: string
+  source_ids?: string[]
+  source_urls?: string[]
+  source?: string | null
 }
 
 export interface MarketResearch {
@@ -60,6 +87,13 @@ export interface MarketResearch {
   risks: string[]
   sources: Source[]
   note: string
+  research_status?: ResearchStatus
+  basis?: "retrieved_evidence" | "background_knowledge" | "none"
+  summary?: string
+  key_findings?: ResearchFinding[]
+  analysis_basis?: string
+  limitations?: string[]
+  retrieved_at?: string | null
 }
 
 export interface CompetitorResearch {
@@ -68,6 +102,10 @@ export interface CompetitorResearch {
   differentiation_opportunity: string
   sources: Source[]
   note: string
+  research_status?: ResearchStatus
+  analysis_basis?: string
+  limitations?: string[]
+  retrieved_at?: string | null
 }
 
 export interface CostComponent {
@@ -79,6 +117,7 @@ export interface FinancialAnalysis {
   currency?: string
   cost_data_available?: boolean
   note?: string
+  sources?: Source[]
   initial_cost: number
   initial_cost_components?: CostComponent[]
   monthly_operating_cost: number
@@ -126,4 +165,6 @@ export interface HealthResponse {
   llm_status: string
   database_status: string
   ml_model_status: string
+  research_status?: string
+  research_providers?: string[]
 }

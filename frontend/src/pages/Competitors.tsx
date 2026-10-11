@@ -1,6 +1,9 @@
 import { Card, SectionTitle, EmptyState } from "../components/Card"
 import { CardSkeleton } from "../components/Skeleton"
+import { ResearchStatusBanner, SourceList } from "../components/SourceList"
 import { useProjectWorkspace } from "../state/ProjectWorkspaceContext"
+
+const NOT_VERIFIED = "Not verified from available sources"
 
 export function Competitors() {
   const { analysis, projectId, loading } = useProjectWorkspace()
@@ -29,11 +32,12 @@ export function Competitors() {
   return (
     <div className="mx-auto max-w-4xl px-8 py-6">
       <SectionTitle subtitle={data.note}>Competitors</SectionTitle>
+      <ResearchStatusBanner status={data.research_status} note={undefined} />
 
       {data.competitors.length === 0 ? (
         <Card>
           <p className="text-sm text-[var(--color-text-dim)]">
-            No confidently-known competitors were identified for this idea.
+            No competitors could be verified from the retrieved sources.
           </p>
         </Card>
       ) : (
@@ -41,13 +45,31 @@ export function Competitors() {
           {data.competitors.map((c, i) => (
             <Card key={c.name} delay={i * 0.05}>
               <div className="flex items-start justify-between">
-                <div>
+                <div className="min-w-0">
                   <div className="text-base font-semibold text-white">{c.name}</div>
                   <div className="text-sm text-[var(--color-text-dim)]">{c.product}</div>
+                  {c.website && (
+                    <a
+                      href={c.website}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-0.5 inline-block break-all text-xs text-[var(--color-accent-2)] hover:underline"
+                    >
+                      {c.website.replace(/^https?:\/\//, "").replace(/\/$/, "")}
+                      {c.website_verified ? " ✓ official site checked" : ""}
+                    </a>
+                  )}
                 </div>
                 {c.pricing && (
-                  <span className="rounded-full bg-white/10 px-2.5 py-1 text-xs text-white">
-                    {c.pricing}
+                  <span
+                    className={`shrink-0 rounded-full px-2.5 py-1 text-xs ${
+                      c.pricing === NOT_VERIFIED
+                        ? "bg-amber-500/10 text-amber-300"
+                        : "bg-white/10 text-white"
+                    }`}
+                    title={c.pricing_verified ? "Price found in a retrieved source" : undefined}
+                  >
+                    {c.pricing === NOT_VERIFIED ? "Pricing: not verified" : c.pricing}
                   </span>
                 )}
               </div>
@@ -55,16 +77,36 @@ export function Competitors() {
               <p className="mt-1 text-xs text-[var(--color-text-dim)]">
                 Target: {c.target_audience}
               </p>
+              {(c.geography || c.business_model) && (
+                <p className="mt-1 text-xs text-[var(--color-text-dim)]">
+                  {c.geography && <>Availability: {c.geography}</>}
+                  {c.geography && c.business_model && " · "}
+                  {c.business_model && <>Model: {c.business_model}</>}
+                </p>
+              )}
+              {c.features && c.features.length > 0 && (
+                <div className="mt-3">
+                  <div className="mb-1 text-xs uppercase tracking-wide text-[var(--color-text-dim)]">
+                    Features (from sources)
+                  </div>
+                  <Bullets items={c.features} />
+                </div>
+              )}
+              {c.source_ids && c.source_ids.length > 0 && (
+                <p className="mt-2 font-mono text-[11px] text-[var(--color-text-dim)]">
+                  Sources: {c.source_ids.join(", ")}
+                </p>
+              )}
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
                 <div>
                   <div className="mb-1 text-xs uppercase tracking-wide text-emerald-300">
-                    Strengths
+                    Strengths (AI view)
                   </div>
                   <Bullets items={c.strengths} />
                 </div>
                 <div>
                   <div className="mb-1 text-xs uppercase tracking-wide text-red-300">
-                    Weaknesses
+                    Weaknesses (AI view)
                   </div>
                   <Bullets items={c.weaknesses} />
                 </div>
@@ -75,9 +117,24 @@ export function Competitors() {
       )}
 
       <Card className="mt-4" delay={0.2}>
-        <SectionTitle>Differentiation opportunity</SectionTitle>
+        <SectionTitle subtitle="AI interpretation of the evidence above.">
+          Differentiation opportunity
+        </SectionTitle>
         <p className="text-sm text-white">{data.differentiation_opportunity}</p>
       </Card>
+
+      {data.limitations && data.limitations.length > 0 && (
+        <Card className="mt-4" delay={0.25}>
+          <SectionTitle>Limitations</SectionTitle>
+          <Bullets items={data.limitations} />
+        </Card>
+      )}
+
+      {data.sources.length > 0 && (
+        <Card className="mt-4" delay={0.3}>
+          <SourceList sources={data.sources} />
+        </Card>
+      )}
     </div>
   )
 }

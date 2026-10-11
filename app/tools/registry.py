@@ -34,6 +34,11 @@ class ToolRegistry:
             return [tool.spec() for tool in self._tools.values()]
         return [self.get(name).spec() for name in names]
 
+    def model_view(self, name: str, result: dict | None) -> dict | None:
+        if result is None or name not in self._tools:
+            return result
+        return self._tools[name].model_view(result)
+
     async def execute(
         self,
         name: str,

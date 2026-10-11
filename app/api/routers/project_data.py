@@ -32,6 +32,16 @@ async def list_market_research(
     return [MarketResearchResponse.model_validate(r, from_attributes=True) for r in rows]
 
 
+@router.get("/competitor-research", response_model=MarketResearchResponse | None)
+async def get_competitor_research(
+    project: Project = Depends(get_owned_project),
+    session: AsyncSession = Depends(get_session),
+) -> MarketResearchResponse | None:
+    """Latest full competitor_research result (with sources), same row shape as market research."""
+    row = await analyses_store.latest_competitor_research(session, project_id=project.id)
+    return MarketResearchResponse.model_validate(row, from_attributes=True) if row else None
+
+
 @router.get("/competitors", response_model=list[CompetitorResponse])
 async def list_competitors(
     project: Project = Depends(get_owned_project),

@@ -5,6 +5,8 @@ from typing import Any, AsyncIterator
 from app.agent.engine import AgentEngine
 from app.agent.router import needs_agent_path
 from app.agent.types import AgentRequest
+from app.core.errors import AgentError
+from app.core.logging import get_logger
 from app.database.engine import Database
 from app.database.models import Project
 from app.memory.store import MemoryStore
@@ -20,7 +22,26 @@ ANALYSIS_TOOLS = {
     "startup_viability_predictor": "viability",
 }
 
-RECENT_MESSAGE_LIMIT = 16
+logger = get_logger(__name__)
+
+AI_UNAVAILABLE_MESSAGE = "AI service is temporarily unavailable. Please try again."
+
+RESEARCH_GUIDANCE = """market_research, competitor_research, and financial_analysis each run LIVE web research
+themselves (search → retrieved sources → evidence → analysis) when you give them the industry —
+you do not need to call web_search before them. Pass the user's specific question as
+market_research's "focus". Only call web_search directly for other ad-hoc factual questions that
+need current external information. Do NOT call research tools for normal conversation, opinions,
+brainstorming or questions answerable from the project context.
+
+When you present research results:
+- State only facts that appear in the tool results, and name the source (title or domain) for
+  each. Never invent statistics, prices, companies, dates or URLs, and never add a URL that is not
+  in the tool's sources.
+- Keep source-backed facts separate from your own interpretation/recommendations, and label
+  interpretation as such.
+- If a tool says live research is unavailable or evidence is insufficient, say exactly that —
+  never fill the gap with guessed numbers or present general knowledge as current research.
+- Fields marked "Not verified from available sources" must be reported as unverified."""
 
 ROLE_PROMPT = """You are an AI co-founder for a startup incubator platform.
 You are working on ONE specific project right now. Only use the context given below for
@@ -31,11 +52,7 @@ every message. For a simple calculation, use only the calculator. For a competit
 use competitor_research. For a full evaluation, you may use market_research, competitor_research,
 financial_analysis, and startup_viability_predictor together.
 
-market_research, competitor_research, and financial_analysis each automatically search the live
-web for real current Indian data (market stats, named competitors, real INR pricing) when you
-give them the industry — you do not need to call web_search yourself before them; just pass
-industry (and financial_analysis's industry field) and they ground themselves. Only call
-web_search directly for other ad-hoc real-world questions that don't fit one of those tools.
+{research_guidance}
 
 You cannot generate the final startup report from chat — there is no report tool available to
 you. If the user asks for a report or a full written summary, tell them to use the "Generate
@@ -55,7 +72,9 @@ confirmed it.
 
 When calling financial_analysis, always pass the industry field and leave initial_cost_components
 / monthly_cost_components empty so it can research real INR costs itself — only fill those in
-yourself if the founder already gave you their own real numbers."""
+yourself if the founder already gave you their own real numbers.""".replace(
+    "{research_guidance}", RESEARCH_GUIDANCE
+)
 
 INTAKE_PROMPT = """You are an AI co-founder for a startup incubator platform.
 The founder just described their idea for THIS project for the very first time. Call ALL FOUR of
@@ -64,10 +83,7 @@ market_research, competitor_research, financial_analysis, then startup_viability
 not ask for permission or confirmation first, and do not skip any of them even if the founder's
 message is short — infer what you can from the profile and industry.
 
-market_research, competitor_research, and financial_analysis each automatically search the live
-web for real current Indian data (market stats, named competitors, real INR pricing) when you
-give them the industry — you do not need to call web_search yourself first; just pass industry to
-each of them (and financial_analysis's industry field) and they ground themselves.
+{research_guidance}
 
 When calling startup_viability_predictor, NEVER leave the factors at their default value of 50.
 Set each of the 8 factor arguments explicitly, scoring it 0-100 based on the evidence you just
@@ -84,7 +100,7 @@ yourself if the founder already gave you their own real numbers.
 Once all four tools have returned results, write a short, warm, conversational summary (2-4
 sentences) of what stood out — the strongest signal and the biggest risk — and ask the founder
 what they'd like to focus on next. Do not just repeat raw numbers; talk like a co-founder giving
-an update."""
+an update.""".replace("{research_guidance}", RESEARCH_GUIDANCE)
 
 FAST_PROMPT = """You are an AI co-founder for a startup incubator platform, having a normal
 conversation about ONE specific project. Answer directly and conversationally using only the
@@ -169,7 +185,7 @@ class ProjectOrchestrator:
     async def _recent_history_messages(self, conversation_id: str) -> list[ChatMessage]:
         async with self.db.session() as session:
             rows = await project_store.recent_messages(
-                session, conversation_id=conversation_id, limit=RECENT_MESSAGE_LIMIT
+                session, conversation_id=conversation_id, limit=self.settings.chat_history_limit
             )
         return [
             ChatMessage(role=row.role, content=row.content)
@@ -247,13 +263,18 @@ class ProjectOrchestrator:
             *(history or [ChatMessage(role="user", content=user_input)]),
         ]
         chunks: list[str] = []
-        async for token in self.model.chat_stream(
-            messages,
-            temperature=self.settings.model_temperature,
-            max_tokens=self.settings.fast_path_max_tokens,
-        ):
-            chunks.append(token)
-            yield {"type": "token", "text": token}
+        try:
+            async for token in self.model.chat_stream(
+                messages,
+                temperature=self.settings.model_temperature,
+                max_tokens=self.settings.fast_path_max_tokens,
+            ):
+                chunks.append(token)
+                yield {"type": "token", "text": token}
+        except AgentError as exc:
+            logger.warning("fast_path_model_error", extra={"error": exc.code})
+            yield _error_done("fast", project_id, conversation_id, exc.message or AI_UNAVAILABLE_MESSAGE)
+            return
 
         output = "".join(chunks).strip() or "I didn't produce a response — please try again."
         async with self.db.session() as session:
@@ -288,8 +309,13 @@ class ProjectOrchestrator:
     ) -> AsyncIterator[dict[str, Any]]:
         yield {"type": "status", "message": "Thinking..."}
 
-        updates = await extract_profile_updates(self.model, user_input)
-        if not updates.is_empty():
+        try:
+            updates = await extract_profile_updates(self.model, user_input)
+        except AgentError as exc:
+            # The model is down; the agent run below will hit the same error and report it.
+            logger.warning("profile_extraction_failed", extra={"error": exc.code})
+            updates = None
+        if updates is not None and not updates.is_empty():
             async with self.db.session() as session:
                 project = await project_store.merge_profile_fields(
                     session, project=project, fields=updates.to_project_fields()
@@ -335,6 +361,9 @@ class ProjectOrchestrator:
                         session, project_id=project_id, data=event.result
                     )
                 elif event.name == "competitor_research":
+                    await analyses_store.save_competitor_research(
+                        session, project_id=project_id, data=event.result
+                    )
                     competitors = event.result.get("competitors")
                     if isinstance(competitors, list) and competitors:
                         await analyses_store.replace_competitors_from_research(
@@ -348,3 +377,21 @@ class ProjectOrchestrator:
                     await analyses_store.save_viability(
                         session, project_id=project_id, data=event.result
                     )
+
+
+def _error_done(path: str, project_id: str, conversation_id: str, message: str) -> dict[str, Any]:
+    """A safe, user-facing failure event — no stack traces, provider details or secrets."""
+    return {
+        "type": "done",
+        "path": path,
+        "response": message,
+        "project_id": project_id,
+        "conversation_id": conversation_id,
+        "tool_activity": [],
+        "analysis": None,
+        "viability": None,
+        "recommendations": [],
+        "sources": [],
+        "errors": [message],
+        "success": False,
+    }

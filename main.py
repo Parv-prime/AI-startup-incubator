@@ -15,7 +15,7 @@ from app.core.logging import configure_logging
 from app.database.engine import Database
 from app.knowledge.store import KnowledgeStore
 from app.memory.store import MemoryStore
-from app.models.factory import create_model_provider, create_primary_provider
+from app.models.factory import create_model_provider
 from app.projects import store as project_store
 from app.projects.orchestrator import ProjectOrchestrator
 from app.tools.builtin import build_default_registry
@@ -55,8 +55,7 @@ async def _run_once(user_input: str, project_id: str | None):
     settings = get_settings()
     db = Database(settings)
     await db.create_all()
-    ollama_model = create_model_provider(settings)
-    model = create_primary_provider(settings, ollama_fallback=ollama_model)
+    model = create_model_provider(settings)
     memory_store = MemoryStore(db)
     knowledge_store = KnowledgeStore(db)
     tools = build_default_registry(settings, db=db, memory_store=memory_store, knowledge_store=knowledge_store, model=model)

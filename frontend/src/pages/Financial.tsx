@@ -1,6 +1,7 @@
 import { motion } from "motion/react"
 import { Card, SectionTitle, EmptyState } from "../components/Card"
 import { CardSkeleton } from "../components/Skeleton"
+import { SourceList } from "../components/SourceList"
 import { useProjectWorkspace } from "../state/ProjectWorkspaceContext"
 
 export function Financial() {
@@ -125,6 +126,12 @@ export function Financial() {
             </Card>
           )}
         </div>
+      )}
+
+      {f.sources && f.sources.length > 0 && (
+        <Card className="mt-4" delay={0.15}>
+          <SourceList sources={f.sources} title="Cost research sources" />
+        </Card>
       )}
     </div>
   )
